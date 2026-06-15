@@ -93,3 +93,15 @@ The CI pipeline includes:
 
 - Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Community standards: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+## Comprehensive Feature Docs
+
+Use the reusable template for any new deep-dive feature docs:
+
+- [Documentation Template](comprehensive/TEMPLATE.md)
+
+Initial comprehensive set:
+
+- [Audio Routing](comprehensive/AUDIO_ROUTING.md)
+- [Android Auto](comprehensive/ANDROID_AUTO.md)
+- [Bluetooth](comprehensive/BLUETOOTH.md)

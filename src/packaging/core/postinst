@@ -61,8 +61,13 @@ case "$1" in
         chmod 755 /etc/crankshaft/profiles || true
         
         # Create runtime directories
-        mkdir -p /var/lib/crankshaft /var/log/crankshaft || true
-        chown -R crankshaft:crankshaft /var/lib/crankshaft /var/log/crankshaft || true
+        mkdir -p /var/lib/crankshaft || true
+        mkdir -p /var/lib/crankshaft/.config || true
+        mkdir -p /var/lib/crankshaft/.local/share || true
+        mkdir -p /var/lib/crankshaft/.local/state || true
+        mkdir -p /var/log/crankshaft || true
+        mkdir -p /var/cache/crankshaft || true
+        chown -R crankshaft:crankshaft /var/lib/crankshaft /var/log/crankshaft /var/cache/crankshaft || true
         
         # Ensure USB trigger scripts are executable
         [ -f /usr/lib/crankshaft/aa_discovery_trigger.sh ] && chmod +x /usr/lib/crankshaft/aa_discovery_trigger.sh || true

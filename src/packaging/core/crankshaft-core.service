@@ -31,12 +31,24 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# Service user has no login home; provide explicit writable runtime/data paths.
+Environment="HOME=/var/lib/crankshaft"
+Environment="XDG_CONFIG_HOME=/var/lib/crankshaft/.config"
+Environment="XDG_DATA_HOME=/var/lib/crankshaft/.local/share"
+Environment="XDG_STATE_HOME=/var/lib/crankshaft/.local/state"
+Environment="XDG_CACHE_HOME=/var/cache/crankshaft"
+
+# PipeWire/Pulse runtime mapping for the crankshaft service user.
+Environment="XDG_RUNTIME_DIR=/run/user/%U"
+Environment="PIPEWIRE_RUNTIME_DIR=/run/user/%U"
+Environment="PULSE_SERVER=unix:/run/user/%U/pulse/native"
+
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/crankshaft /var/log/crankshaft
+ReadWritePaths=/var/lib/crankshaft /var/log/crankshaft /var/cache/crankshaft
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

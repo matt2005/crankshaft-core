@@ -19,13 +19,43 @@
 
 #include "AudioRouter.h"
 
+#include <unistd.h>
+
 #include <QAudioDevice>
 #include <QDebug>
+#include <QFileInfo>
 #include <QMediaDevices>
 #include <QProcess>
+#include <QProcessEnvironment>
+#include <QStringList>
 
 #include "../../hal/multimedia/MediaPipeline.h"
 #include "../logging/Logger.h"
+
+namespace {
+
+QStringList runtimeDirCandidates() {
+  QStringList candidates;
+
+  const QString pipewireRuntimeDir = qEnvironmentVariable("PIPEWIRE_RUNTIME_DIR");
+  if (!pipewireRuntimeDir.isEmpty()) {
+    candidates.append(pipewireRuntimeDir);
+  }
+
+  const QString xdgRuntimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
+  if (!xdgRuntimeDir.isEmpty() && !candidates.contains(xdgRuntimeDir)) {
+    candidates.append(xdgRuntimeDir);
+  }
+
+  const QString uidRuntimeDir = QStringLiteral("/run/user/%1").arg(static_cast<uint>(geteuid()));
+  if (!candidates.contains(uidRuntimeDir)) {
+    candidates.append(uidRuntimeDir);
+  }
+
+  return candidates;
+}
+
+}  // namespace
 
 AudioRouter::AudioRouter(MediaPipeline* mediaPipeline, QObject* parent)
     : QObject(parent), m_mediaPipeline(mediaPipeline) {
@@ -78,8 +108,24 @@ bool AudioRouter::initialize() {
 }
 
 bool AudioRouter::initializePipeWire() {
+  // Prefer socket presence checks first; this avoids false negatives when
+  // helper binaries are unavailable but PipeWire is already running.
+  const QStringList runtimeDirs = runtimeDirCandidates();
+  for (const QString& runtimeDir : runtimeDirs) {
+    const QString socketPath = runtimeDir + QStringLiteral("/pipewire-0");
+    if (QFileInfo::exists(socketPath)) {
+      return true;
+    }
+  }
+
   // Check if PipeWire daemon is running via pw-cli
   QProcess pwProcess;
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  if (!runtimeDirs.isEmpty()) {
+    env.insert(QStringLiteral("XDG_RUNTIME_DIR"), runtimeDirs.first());
+    env.insert(QStringLiteral("PIPEWIRE_RUNTIME_DIR"), runtimeDirs.first());
+  }
+  pwProcess.setProcessEnvironment(env);
   pwProcess.setProgram(QStringLiteral("pw-cli"));
   pwProcess.setArguments(QStringList() << QStringLiteral("info") << QStringLiteral("0"));
   pwProcess.start();
@@ -89,7 +135,7 @@ bool AudioRouter::initializePipeWire() {
     return false;
   }
 
-  const bool finished = pwProcess.waitForFinished(2000);
+  const bool finished = pwProcess.waitForFinished(3000);
   const int exitCode = pwProcess.exitCode();
 
   if (!finished || exitCode != 0) {
@@ -101,8 +147,37 @@ bool AudioRouter::initializePipeWire() {
 }
 
 bool AudioRouter::initializePulseAudio() {
+  // PipeWire Pulse emulation exposes a native Pulse socket. Prefer checking
+  // that socket first, then fall back to pactl probing.
+  const QString pulseServer = qEnvironmentVariable("PULSE_SERVER");
+  if (pulseServer.startsWith(QStringLiteral("unix:"))) {
+    const QString pulseSocket = pulseServer.mid(5);
+    if (!pulseSocket.isEmpty() && QFileInfo::exists(pulseSocket)) {
+      return true;
+    }
+  } else {
+    const QStringList runtimeDirs = runtimeDirCandidates();
+    for (const QString& runtimeDir : runtimeDirs) {
+      const QString fallbackSocket = runtimeDir + QStringLiteral("/pulse/native");
+      if (QFileInfo::exists(fallbackSocket)) {
+        return true;
+      }
+    }
+  }
+
   // Check if PulseAudio daemon is available via pactl
   QProcess paProcess;
+  const QStringList runtimeDirs = runtimeDirCandidates();
+  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+  if (!runtimeDirs.isEmpty()) {
+    const QString runtimeDir = runtimeDirs.first();
+    env.insert(QStringLiteral("XDG_RUNTIME_DIR"), runtimeDir);
+    if (!env.contains(QStringLiteral("PULSE_SERVER"))) {
+      env.insert(QStringLiteral("PULSE_SERVER"),
+                 QStringLiteral("unix:%1/pulse/native").arg(runtimeDir));
+    }
+  }
+  paProcess.setProcessEnvironment(env);
   paProcess.setProgram(QStringLiteral("pactl"));
   paProcess.setArguments(QStringList() << QStringLiteral("info"));
   paProcess.start();
@@ -112,7 +187,7 @@ bool AudioRouter::initializePulseAudio() {
     return false;
   }
 
-  const bool finished = paProcess.waitForFinished(2000);
+  const bool finished = paProcess.waitForFinished(3000);
   const int exitCode = paProcess.exitCode();
 
   if (!finished || exitCode != 0) {
